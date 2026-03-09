@@ -51,6 +51,7 @@ const MARGIN = { top: 24, right: 24, bottom: 48, left: 56 };
 
 /** Theme aligned with NbaTravelMap_v3 */
 const CHART_THEME = {
+  fontFamily: "'IBM Plex Mono','Courier New',monospace",
   bgPage: "#0f172a",
   bgChart: "#0a1628",
   border: "#1e293b",
@@ -305,7 +306,7 @@ export default function FatigueIndexChart() {
 
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
-    svg.attr("style", `background: ${CHART_THEME.bgChart}; display: block;`);
+    svg.attr("style", `background: ${CHART_THEME.bgChart}; display: block; font-family: ${CHART_THEME.fontFamily};`);
 
     const innerWidth = WIDTH - MARGIN.left - MARGIN.right;
     const innerHeight = HEIGHT - MARGIN.top - MARGIN.bottom;
@@ -402,6 +403,7 @@ export default function FatigueIndexChart() {
         .attr("fill", CHART_THEME.textMuted)
         .attr("font-size", "11px")
         .attr("font-weight", "600")
+        .attr("font-family", CHART_THEME.fontFamily)
         .text(`Worst 5-game stretch (avg ${worst5GameStretch.avgFatigue.toFixed(1)})`);
     }
 
@@ -423,7 +425,7 @@ export default function FatigueIndexChart() {
       .call(xAxis)
       .attr("class", "x-axis")
       .call((sel) => {
-        sel.selectAll(".tick text").attr("fill", CHART_THEME.axis);
+        sel.selectAll(".tick text").attr("fill", "#e2e8f0").attr("font-family", CHART_THEME.fontFamily);
         sel.selectAll(".domain, .tick line").attr("stroke", CHART_THEME.border);
       });
 
@@ -431,7 +433,7 @@ export default function FatigueIndexChart() {
       .call(yAxis)
       .attr("class", "y-axis")
       .call((sel) => {
-        sel.selectAll(".tick text").attr("fill", CHART_THEME.axis);
+        sel.selectAll(".tick text").attr("fill", "#e2e8f0").attr("font-family", CHART_THEME.fontFamily);
         sel.selectAll(".domain, .tick line").attr("stroke", CHART_THEME.border);
       });
   }, [chartData, pointsWithFatigue, worst5GameStretch, selectedTeam]);
@@ -442,7 +444,7 @@ export default function FatigueIndexChart() {
 
   if (loading) {
     return (
-      <Box p={2} sx={{ color: CHART_THEME.textMuted, fontFamily: "monospace" }}>
+      <Box p={2} sx={{ color: CHART_THEME.textMuted, fontFamily: CHART_THEME.fontFamily }}>
         Loading team game data…
       </Box>
     );
@@ -454,17 +456,15 @@ export default function FatigueIndexChart() {
     <Paper
       sx={{
         p: 2,
+        fontFamily: CHART_THEME.fontFamily,
         background: CHART_THEME.bgPage,
         border: `1px solid ${CHART_THEME.border}`,
         borderRadius: 2,
         color: CHART_THEME.textMuted,
       }}
     >
-      <div style={{ fontSize: 10, letterSpacing: "0.25em", color: teamColor, textTransform: "uppercase", marginBottom: 4 }}>
-        Fatigue index
-      </div>
-      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: CHART_THEME.text, letterSpacing: "-0.02em" }}>
-        By game number (season)
+      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#e2e8f0", letterSpacing: "-0.02em" }}>
+        Fatigue index — By game number (season)
       </h2>
       <FormControl
         size="small"
@@ -482,6 +482,7 @@ export default function FatigueIndexChart() {
           "& .MuiInputLabel-root": { color: CHART_THEME.textDim },
           "& .MuiInputLabel-root.Mui-focused": { color: CHART_THEME.textMuted },
           "& .MuiSvgIcon-root": { color: CHART_THEME.textMuted },
+          "& .MuiSelect-select": { fontFamily: "inherit" },
         }}
       >
         <InputLabel id="team-select-label">Team</InputLabel>
@@ -490,17 +491,18 @@ export default function FatigueIndexChart() {
           value={selectedTeam}
           label="Team"
           onChange={handleTeamChange}
-          MenuProps={{
-            PaperProps: {
-              sx: {
-                background: CHART_THEME.bgPage,
-                border: `1px solid ${CHART_THEME.border}`,
-                "& .MuiMenuItem-root": { color: CHART_THEME.textMuted },
-                "& .MuiMenuItem-root:hover": { background: CHART_THEME.border },
-                "& .MuiMenuItem-root.Mui-selected": { background: CHART_THEME.border, color: teamColor },
+            MenuProps={{
+              PaperProps: {
+                sx: {
+                  fontFamily: CHART_THEME.fontFamily,
+                  background: CHART_THEME.bgPage,
+                  border: `1px solid ${CHART_THEME.border}`,
+                  "& .MuiMenuItem-root": { color: CHART_THEME.textMuted },
+                  "& .MuiMenuItem-root:hover": { background: CHART_THEME.border },
+                  "& .MuiMenuItem-root.Mui-selected": { background: CHART_THEME.border, color: teamColor },
+                },
               },
-            },
-          }}
+            }}
         >
           {teams.map((t) => (
             <MenuItem key={t} value={t}>
@@ -520,14 +522,14 @@ export default function FatigueIndexChart() {
           <Typography
             variant="caption"
             display="block"
-            sx={{ px: 1, py: 0.5, color: CHART_THEME.textDim, fontSize: 11 }}
+            sx={{ px: 1, py: 0.5, color: "#e2e8f0", fontSize: 13, fontWeight: 500 }}
           >
             X: game number (1–82). Y: fatigue index. Team: {selectedTeam}.
           </Typography>
           <Typography
             variant="caption"
             display="block"
-            sx={{ px: 1, pb: 1, color: CHART_THEME.textDim, fontSize: 10 }}
+            sx={{ px: 1, pb: 1, color: "#e2e8f0", fontSize: 13, fontWeight: 500 }}
           >
             Shaded area: injuries (green → red). Red band: worst 5-game stretch.
           </Typography>
@@ -535,6 +537,7 @@ export default function FatigueIndexChart() {
         <TableContainer
           component={Paper}
           sx={{
+            fontFamily: CHART_THEME.fontFamily,
             maxWidth: 280,
             maxHeight: 420,
             background: CHART_THEME.bgPage,
