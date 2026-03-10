@@ -36,7 +36,7 @@ function App() {
           textAlign: "center",
         }}
       >
-        Fatigue from the NBA Schedule affecting Team Performance & Injuries
+        Fatigue From the NBA Schedule Affecting Team Performance & Injuries
       </h1>
 
       {/* Hero image */}
@@ -115,6 +115,29 @@ function App() {
           </ul>
         </div>
         <FatigueIndexInjuryChart />
+        <div
+          style={{
+            maxWidth: 820,
+            fontSize: 14,
+            lineHeight: 1.6,
+            color: PAGE_THEME.textMuted,
+          }}
+        >
+          <h3
+            style={{
+              margin: "0 0 8px 0",
+              fontSize: 16,
+              fontWeight: 700,
+              color: PAGE_THEME.text,
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Fatigue index by game — description
+          </h3>
+          <p style={{ margin: 0 }}>
+            This chart shows how a team&apos;s fatigue index changes across the season (game 1 through 82). The line tracks the composite fatigue score for each game based on rest, travel distance, and time-zone strain. The shaded area under the line is colored by how many players were out (injured) for that game—green when below the league average for the season, yellow at the league average, and red when above. The red band highlights the worst 5-game stretch by average fatigue. Use the Season and Team dropdowns to compare different years and teams; the table lists average fatigue index for all teams in the selected season.
+          </p>
+        </div>
         <FatigueScatterPlot />
       </div>
     </div>
