@@ -83,7 +83,7 @@ function App() {
         }}
       >
         <p style={{ margin: 0 }}>
-          A lot of superstars players were injured for a significant amount of time in the 2023-24 season with a majority of them having season ending injuries. These were signs that the NBA schedule is taking a toll on the players and affecting the quality of the product.
+          A lot of superstars players were injured for a significant amount of time in the 2023-24 season with a majority of them having season ending injuries. These were signs that the NBA schedule is taking a toll on the players and affecting the quality of the product.ç
         </p>
       </div>
       {/* Visualizations */}
