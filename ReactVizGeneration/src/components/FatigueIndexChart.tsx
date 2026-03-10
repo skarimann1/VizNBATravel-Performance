@@ -91,16 +91,25 @@ export default function FatigueIndexChart() {
   const [rawData, setRawData] = useState<Record<string, unknown>[]>([]);
   const [injuryRows, setInjuryRows] = useState<Record<string, unknown>[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<string>("ATL");
+  const [selectedSeason, setSelectedSeason] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
-      d3.csv("/data/team_game_master.csv"),
+      d3.csv("/data/team_game_master_2015-2025.csv"),
       d3.csv("/data/injury_data.csv"),
     ])
       .then(([teamRows, injuryData]) => {
         setRawData(teamRows);
         setInjuryRows(injuryData);
+        if (teamRows.length && !selectedSeason) {
+          const excluded = new Set(["2014-15", "2015-16"]);
+          const seasonKeys = [...new Set(teamRows.map((r) => String(r.season ?? "").replace(/^"|"$/g, "")).filter(Boolean))]
+            .filter((s) => !excluded.has(s))
+            .sort()
+            .reverse();
+          if (seasonKeys.length) setSelectedSeason((s) => s || seasonKeys[0]);
+        }
         if (teamRows.length && !selectedTeam) {
           const teams = [...new Set(teamRows.map((r) => r.team_slug).filter(Boolean))] as string[];
           teams.sort();
@@ -119,22 +128,21 @@ export default function FatigueIndexChart() {
     return t.sort();
   }, [rawData]);
 
-  /** Currently displayed season (e.g. "2023-24") and its date range, from team game data */
+  const availableSeasons = useMemo(() => {
+    const excluded = new Set(["2014-15", "2015-16"]);
+    const s = [...new Set(rawData.map((r) => String(r.season ?? "").replace(/^"|"$/g, "")).filter(Boolean))]
+      .filter((season) => !excluded.has(season))
+      .sort()
+      .reverse();
+    return s;
+  }, [rawData]);
+
+  /** Currently displayed season (e.g. "2023-24") and its date range, from selected season */
   const displaySeason = useMemo(() => {
-    if (!rawData.length) return null;
-    const filtered = rawData.filter((r) => r.team_slug === selectedTeam);
-    const bySeason = new Map<string, number>();
-    for (const r of filtered) {
-      const season = String(r.season_label ?? "").replace(/^"|"$/g, "");
-      if (!season || season === "season_label") continue;
-      bySeason.set(season, (bySeason.get(season) ?? 0) + 1);
-    }
-    const seasons = [...bySeason.keys()].sort().reverse();
-    const seasonLabel = seasons[0];
-    if (!seasonLabel) return null;
-    const range = seasonDateRange(seasonLabel);
-    return range ? { seasonLabel, ...range } : null;
-  }, [rawData, selectedTeam]);
+    if (!selectedSeason) return null;
+    const range = seasonDateRange(selectedSeason);
+    return range ? { seasonLabel: selectedSeason, ...range } : null;
+  }, [selectedSeason]);
 
   /** Build injury spells from CSV: each spell = player out from Relinquished date until Acquired date */
   const injurySpells = useMemo(() => {
@@ -206,27 +214,18 @@ export default function FatigueIndexChart() {
   }, [injurySpellsInSeason]);
 
   const chartData = useMemo(() => {
-    if (!rawData.length) return [];
+    if (!rawData.length || !selectedSeason) return [];
 
-    const filtered = rawData.filter((r) => r.team_slug === selectedTeam);
-    const bySeason = new Map<string, { game_date: string; fatigue_index: number | null }[]>();
-    for (const r of filtered) {
-      const season = String(r.season_label ?? "").replace(/^"|"$/g, "");
-      if (!season || season === "season_label") continue;
-      const fatigue =
-        r.fatigue_index != null && r.fatigue_index !== "" && String(r.fatigue_index).toUpperCase() !== "NA"
-          ? Number(r.fatigue_index)
-          : null;
-      if (!bySeason.has(season)) bySeason.set(season, []);
-      bySeason.get(season)!.push({ game_date: String(r.game_date ?? ""), fatigue_index: fatigue });
-    }
-
-    const seasons = [...bySeason.keys()].sort().reverse();
-    const useSeason = seasons[0];
-    if (!useSeason) return [];
-
-    const games = bySeason.get(useSeason)!;
-    games.sort((a, b) => new Date(a.game_date).getTime() - new Date(b.game_date).getTime());
+    const filtered = rawData.filter((r) => r.team_slug === selectedTeam && String(r.season ?? "").replace(/^"|"$/g, "") === selectedSeason);
+    const games = filtered
+      .map((r) => {
+        const fatigue =
+          r.fatigue_index != null && r.fatigue_index !== "" && String(r.fatigue_index).toUpperCase() !== "NA"
+            ? Number(r.fatigue_index)
+            : null;
+        return { game_date: String(r.game_date ?? ""), fatigue_index: fatigue };
+      })
+      .sort((a, b) => new Date(a.game_date).getTime() - new Date(b.game_date).getTime());
 
     return games.map((d, i) => ({
       game_id: "",
@@ -236,7 +235,21 @@ export default function FatigueIndexChart() {
       game_number: i + 1,
       players_out: countPlayersOut(selectedTeam, d.game_date),
     })) as GameRow[];
-  }, [rawData, selectedTeam, countPlayersOut]);
+  }, [rawData, selectedTeam, selectedSeason, countPlayersOut]);
+
+  /** League-wide average number of players out per game for the selected season (for color scale) */
+  const leagueAvgPlayersOutPerGame = useMemo(() => {
+    if (!rawData.length || !selectedSeason) return 1;
+    const seasonRows = rawData.filter((r) => String(r.season ?? "").replace(/^"|"$/g, "") === selectedSeason);
+    if (!seasonRows.length) return 1;
+    let sum = 0;
+    for (const r of seasonRows) {
+      const team = r.team_slug as string;
+      const date = String(r.game_date ?? "").trim();
+      if (team && date) sum += countPlayersOut(team, date);
+    }
+    return sum / seasonRows.length;
+  }, [rawData, selectedSeason, countPlayersOut]);
 
   const pointsWithFatigue = useMemo(
     () => chartData.filter((d) => d.fatigue_index != null && Number.isFinite(d.fatigue_index)),
@@ -274,7 +287,7 @@ export default function FatigueIndexChart() {
     const seasonLabel = displaySeason.seasonLabel;
     const byTeam = new Map<string, number[]>();
     for (const r of rawData) {
-      const s = String(r.season_label ?? "").replace(/^"|"$/g, "");
+      const s = String(r.season ?? "").replace(/^"|"$/g, "");
       if (s !== seasonLabel || !r.team_slug) continue;
       const f =
         r.fatigue_index != null && r.fatigue_index !== "" && String(r.fatigue_index).toUpperCase() !== "NA"
@@ -352,10 +365,12 @@ export default function FatigueIndexChart() {
       .attr("transform", `translate(${MARGIN.left},${MARGIN.top})`);
 
     const maxPlayersOut = d3.max(chartData, (d) => d.players_out) ?? 1;
+    const leagueAvg = leagueAvgPlayersOutPerGame;
+    const scaleMax = Math.max(leagueAvg * 2, maxPlayersOut, 1);
     const colorScale = d3
       .scaleLinear<string>()
-      .domain([0, Math.max(1, maxPlayersOut)])
-      .range(["#15803d", "#dc2626"])
+      .domain([0, leagueAvg, scaleMax])
+      .range(["#15803d", "#eab308", "#dc2626"])
       .clamp(true);
 
     const xMaxScale = Math.max(82, xMax);
@@ -436,7 +451,7 @@ export default function FatigueIndexChart() {
         sel.selectAll(".tick text").attr("fill", "#e2e8f0").attr("font-family", CHART_THEME.fontFamily);
         sel.selectAll(".domain, .tick line").attr("stroke", CHART_THEME.border);
       });
-  }, [chartData, pointsWithFatigue, worst5GameStretch, selectedTeam]);
+  }, [chartData, pointsWithFatigue, worst5GameStretch, selectedTeam, leagueAvgPlayersOutPerGame]);
 
   const handleTeamChange = (e: SelectChangeEvent<string>) => {
     setSelectedTeam(e.target.value);
@@ -466,12 +481,55 @@ export default function FatigueIndexChart() {
       <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#e2e8f0", letterSpacing: "-0.02em" }}>
         Fatigue index — By game number (season)
       </h2>
+      <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center", mb: 2, mt: 1.5 }}>
+      <FormControl
+        size="small"
+        sx={{
+          minWidth: 160,
+          "& .MuiOutlinedInput-root": {
+            background: CHART_THEME.border,
+            border: `1px solid ${CHART_THEME.borderLight}`,
+            color: CHART_THEME.textMuted,
+            "& fieldset": { border: "none" },
+            "&:hover fieldset": { borderColor: CHART_THEME.borderLight },
+          },
+          "& .MuiInputLabel-root": { color: CHART_THEME.textDim },
+          "& .MuiInputLabel-root.Mui-focused": { color: CHART_THEME.textMuted },
+          "& .MuiSvgIcon-root": { color: CHART_THEME.textMuted },
+          "& .MuiSelect-select": { fontFamily: "inherit" },
+        }}
+      >
+        <InputLabel id="season-select-label">Season</InputLabel>
+        <Select
+          labelId="season-select-label"
+          value={selectedSeason}
+          label="Season"
+          onChange={(e) => setSelectedSeason(e.target.value)}
+          MenuProps={{
+            PaperProps: {
+              sx: {
+                fontFamily: CHART_THEME.fontFamily,
+                background: CHART_THEME.bgPage,
+                border: `1px solid ${CHART_THEME.border}`,
+                "& .MuiMenuItem-root": { color: CHART_THEME.textMuted },
+                "& .MuiMenuItem-root:hover": { background: CHART_THEME.border },
+                "& .MuiMenuItem-root.Mui-selected": { background: CHART_THEME.border, color: CHART_THEME.lineLow },
+              },
+            },
+          }}
+        >
+          {availableSeasons.map((s) => (
+            <MenuItem key={s} value={s}>
+              {s}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
       <FormControl
         size="small"
         sx={{
           minWidth: 160,
           mb: 2,
-          mt: 1.5,
           "& .MuiOutlinedInput-root": {
             background: CHART_THEME.border,
             border: `1px solid ${CHART_THEME.borderLight}`,
@@ -511,6 +569,7 @@ export default function FatigueIndexChart() {
           ))}
         </Select>
       </FormControl>
+      </Box>
       <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "flex-start" }}>
         <Box sx={{ borderRadius: 1, overflow: "hidden", border: `1px solid ${CHART_THEME.border}` }}>
           <svg
@@ -531,7 +590,7 @@ export default function FatigueIndexChart() {
             display="block"
             sx={{ px: 1, pb: 1, color: "#e2e8f0", fontSize: 13, fontWeight: 500 }}
           >
-            Shaded area: injuries (green → red). Red band: worst 5-game stretch.
+            Shaded area: players out (green = below league avg, yellow = league avg, red = above). Red band: worst 5-game stretch.
           </Typography>
         </Box>
         <TableContainer

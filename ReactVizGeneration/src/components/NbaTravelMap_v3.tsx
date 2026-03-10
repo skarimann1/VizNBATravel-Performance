@@ -51,6 +51,17 @@ const TEAM_COLORS: Record<string, string> = {
   SAC:"#5A2D81",SAS:"#C4CED4",TOR:"#CE1141",UTA:"#F9A01B",WAS:"#E31837",
 };
 
+const TEAM_NAMES: Record<string, string> = {
+  ATL: "Atlanta Hawks", BOS: "Boston Celtics", BKN: "Brooklyn Nets", CHA: "Charlotte Hornets",
+  CHI: "Chicago Bulls", CLE: "Cleveland Cavaliers", DAL: "Dallas Mavericks", DEN: "Denver Nuggets",
+  DET: "Detroit Pistons", GSW: "Golden State Warriors", HOU: "Houston Rockets", IND: "Indiana Pacers",
+  LAC: "LA Clippers", LAL: "Los Angeles Lakers", MEM: "Memphis Grizzlies", MIA: "Miami Heat",
+  MIL: "Milwaukee Bucks", MIN: "Minnesota Timberwolves", NOP: "New Orleans Pelicans", NYK: "New York Knicks",
+  OKC: "Oklahoma City Thunder", ORL: "Orlando Magic", PHI: "Philadelphia 76ers", PHX: "Phoenix Suns",
+  POR: "Portland Trail Blazers", SAC: "Sacramento Kings", SAS: "San Antonio Spurs", TOR: "Toronto Raptors",
+  UTA: "Utah Jazz", WAS: "Washington Wizards",
+};
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function arcLineString(d: ArcRow, n = 80): GeoJSON.LineString {
   const interp = d3.geoInterpolate([d.from_lon, d.from_lat], [d.to_lon, d.to_lat]);
@@ -69,6 +80,8 @@ function fmt(v: number|undefined|null, dec=1) {
 // ── Component ────────────────────────────────────────────────────────────────
 export default function NBATravelMap() {
   const [usTopo, setUsTopo] = useState<any>(null);
+  const [gameRows, setGameRows] = useState<d3.DSVRowString[]>([]);
+  const [selectedSeason, setSelectedSeason] = useState<string>("");
   const [selectedTeam, setSelectedTeam] = useState("LAL");
   const [dateIndex, setDateIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -80,15 +93,94 @@ export default function NBATravelMap() {
     d3.json("/data/states-10m.json").then(setUsTopo).catch(console.error);
   }, []);
 
-  const allArcs = useMemo<ArcRow[]>(() => {
-    return (TRAVEL_ARCS_DATA as any[]).map(d => ({
-      ...d,
-      dateObj: new Date(d.date),
-    })).filter(d =>
-      Number.isFinite(d.from_lat) && Number.isFinite(d.from_lon) &&
-      Number.isFinite(d.to_lat) && Number.isFinite(d.to_lon)
-    ).sort((a,b) => a.dateObj!.getTime() - b.dateObj!.getTime());
+  useEffect(() => {
+    d3.csv("/data/team_game_master_2015-2025.csv").then((rows) => {
+      setGameRows(rows);
+      if (rows.length > 0) {
+        const seasons = [...new Set(rows.map((r) => String(r.season ?? "").replace(/^"|"$/g, "")).filter(Boolean))].sort().reverse();
+        if (seasons.length) setSelectedSeason((s) => (s || seasons[0]));
+      }
+    }).catch(console.error);
   }, []);
+
+  const seasons = useMemo(() => {
+    const s = [...new Set(gameRows.map((r) => String(r.season ?? "").replace(/^"|"$/g, "")).filter(Boolean))].sort().reverse();
+    return s;
+  }, [gameRows]);
+
+  const allArcs = useMemo<ArcRow[]>(() => {
+    if (!gameRows.length) return [];
+    const parseNum = (v: string | undefined): number | undefined => {
+      if (v == null || v === "" || String(v).toUpperCase() === "NA") return undefined;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : undefined;
+    };
+    const rows = gameRows
+      .map((r) => ({
+        season: String(r.season ?? "").replace(/^"|"$/g, ""),
+        game_date: String(r.game_date ?? ""),
+        team_slug: String(r.team_slug ?? ""),
+        opponent_slug: String(r.opponent_slug ?? ""),
+        location: String(r.location ?? ""),
+        wl: String(r.wl ?? ""),
+        pts: parseNum(r.pts),
+        ortg: parseNum(r.ortg),
+        drtg: parseNum(r.drtg),
+        netrtg: parseNum(r.netrtg),
+        rest_hours: parseNum(r.rest_hours),
+        miles_leg: parseNum(r.miles_leg),
+        fatigue_index: parseNum(r.fatigue_index),
+        game_lat: parseNum(r.game_lat),
+        game_lon: parseNum(r.game_lon),
+      }))
+      .filter((r) => r.team_slug && r.season);
+    const byTeamSeason = new Map<string, typeof rows>();
+    for (const r of rows) {
+      const key = `${r.team_slug}|${r.season}`;
+      if (!byTeamSeason.has(key)) byTeamSeason.set(key, []);
+      byTeamSeason.get(key)!.push(r);
+    }
+    const arcs: ArcRow[] = [];
+    byTeamSeason.forEach((group) => {
+      group.sort((a, b) => new Date(a.game_date).getTime() - new Date(b.game_date).getTime());
+      for (let i = 1; i < group.length; i++) {
+        const prev = group[i - 1];
+        const curr = group[i];
+        const fromLat = prev.game_lat, fromLon = prev.game_lon, toLat = curr.game_lat, toLon = curr.game_lon;
+        if (fromLat == null || fromLon == null || toLat == null || toLon == null) continue;
+        if (!Number.isFinite(fromLat) || !Number.isFinite(fromLon) || !Number.isFinite(toLat) || !Number.isFinite(toLon)) continue;
+        arcs.push({
+          season: curr.season,
+          date: curr.game_date,
+          game_id: String(curr.game_date),
+          team: curr.team_slug,
+          team_name: TEAM_NAMES[curr.team_slug] ?? curr.team_slug,
+          opponent: curr.opponent_slug,
+          home_away: curr.location,
+          rest_days: curr.rest_hours != null ? curr.rest_hours / 24 : undefined,
+          isWin: curr.wl === "W",
+          pts: curr.pts,
+          ortg: curr.ortg,
+          drtg: curr.drtg,
+          netrtg: curr.netrtg,
+          travel_miles: curr.miles_leg,
+          fatigue_index: curr.fatigue_index,
+          from_lat: fromLat,
+          from_lon: fromLon,
+          to_lat: toLat,
+          to_lon: toLon,
+          dateObj: new Date(curr.game_date),
+        });
+      }
+    });
+    return arcs
+      .filter((d) => selectedSeason ? d.season === selectedSeason : true)
+      .filter((d) =>
+        Number.isFinite(d.from_lat) && Number.isFinite(d.from_lon) &&
+        Number.isFinite(d.to_lat) && Number.isFinite(d.to_lon)
+      )
+      .sort((a, b) => (a.dateObj?.getTime() ?? 0) - (b.dateObj?.getTime() ?? 0));
+  }, [gameRows, selectedSeason]);
 
   const teams = useMemo(() => {
     const map = new Map<string,string>();
@@ -159,7 +251,7 @@ export default function NBATravelMap() {
   useEffect(() => {
     setDateIndex(0);
     setIsPlaying(false);
-  }, [selectedTeam]);
+  }, [selectedTeam, selectedSeason]);
 
   function handleHover(e: React.MouseEvent<SVGElement>, arc: ArcRow) {
     const rect = svgRef.current?.getBoundingClientRect();
@@ -226,6 +318,22 @@ export default function NBATravelMap() {
         marginBottom:14,background:"#0f172a",borderRadius:8,
         padding:"10px 14px",border:"1px solid #1e293b"
       }}>
+        <div style={{display:"flex",flexDirection:"column",gap:2}}>
+          <label style={{fontSize:9,color:"#64748b",letterSpacing:"0.1em"}}>SEASON</label>
+          <select value={selectedSeason} onChange={e=>setSelectedSeason(e.target.value)} style={{
+            background:"#1e293b",border:"1px solid #334155",color:"#e2e8f0",
+            borderRadius:4,padding:"5px 8px",fontFamily:"inherit",fontSize:12,cursor:"pointer"
+          }}>
+            {seasons.length === 0 ? (
+              <option value="">Loading…</option>
+            ) : (
+              seasons.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))
+            )}
+          </select>
+        </div>
+
         <div style={{display:"flex",flexDirection:"column",gap:2}}>
           <label style={{fontSize:9,color:"#64748b",letterSpacing:"0.1em"}}>TEAM</label>
           <select value={selectedTeam} onChange={e=>setSelectedTeam(e.target.value)} style={{
