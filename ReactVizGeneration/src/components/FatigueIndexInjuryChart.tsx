@@ -103,7 +103,7 @@ export default function FatigueIndexChart() {
         setRawData(teamRows);
         setInjuryRows(injuryData);
         if (teamRows.length && !selectedSeason) {
-          const excluded = new Set(["2014-15", "2015-16"]);
+          const excluded = new Set(["2014-15", "2015-16", "2024-25"]);
           const seasonKeys = [...new Set(teamRows.map((r) => String(r.season ?? "").replace(/^"|"$/g, "")).filter(Boolean))]
             .filter((s) => !excluded.has(s))
             .sort()
@@ -129,7 +129,7 @@ export default function FatigueIndexChart() {
   }, [rawData]);
 
   const availableSeasons = useMemo(() => {
-    const excluded = new Set(["2014-15", "2015-16"]);
+    const excluded = new Set(["2014-15", "2015-16", "2024-25"]);
     const s = [...new Set(rawData.map((r) => String(r.season ?? "").replace(/^"|"$/g, "")).filter(Boolean))]
       .filter((season) => !excluded.has(season))
       .sort()

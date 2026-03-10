@@ -3,6 +3,7 @@ import NBATravelMap_v2 from "./components/NbaTravelMap_v2";
 import NBATravelMap_v3 from "./components/NbaTravelMap_v3";
 import FatigueIndexInjuryChart from "./components/FatigueIndexInjuryChart";
 import FatigueScatterPlot from "./components/FatigueScatterPlot";
+import StarPlayerInjuryTable from "./components/StarPlayerInjuryTable";
 
 const PAGE_THEME = {
   fontFamily: "'IBM Plex Mono','Courier New',monospace",
@@ -70,6 +71,21 @@ function App() {
         <br />
         The central story we want to tell is one of hidden competitive disadvantages. By combining team travel data with official performance metrics, we will visually show that the impact of fatigue caused by short rest windows, long travel distances, and disruptive time-zone crossings has a meaningful relationship with team efficiency. We will be measuring this through Net Rating (NetRtg), Offensive Rating (ORtg), and Defensive Rating (DRtg). These ratings are basically an advanced statistic measuring a team&apos;s efficiency by calculating the number of points scored (or allowed) per 100 possessions. We will additionally investigate whether elevated fatigue correlates with sudden drops in player availability, acting as a proxy for soft injury risk. 
       </p>
+      {/* Star player injury table — 2024-25 */}
+      <StarPlayerInjuryTable />
+      <div
+        style={{
+          maxWidth: 820,
+          margin: "0 auto 40px",
+          fontSize: 14,
+          lineHeight: 1.6,
+          color: PAGE_THEME.textMuted,
+        }}
+      >
+        <p style={{ margin: 0 }}>
+          A lot of superstars players were injured for a significant amount of time in the 2023-24 season with a majority of them having season ending injuries. These were signs that the NBA schedule is taking a toll on the players and affecting the quality of the product.
+        </p>
+      </div>
       {/* Visualizations */}
       <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
         <NBATravelMap_v3 />
