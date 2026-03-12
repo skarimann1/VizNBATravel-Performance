@@ -456,13 +456,13 @@ export default function NBATravelMap() {
           ↩ RESET
         </button>
 
-        <button onClick={()=>setZoom({k:1,x:0,y:0})} style={{
+        {/* <button onClick={()=>setZoom({k:1,x:0,y:0})} style={{
           background:"transparent",color:"#64748b",border:"1px solid #334155",
           borderRadius:4,padding:"6px 12px",fontFamily:"inherit",fontSize:11,cursor:"pointer",
           display:"flex",alignItems:"center",gap:4
         }}>
           ⊙ {zoom.k > 1 ? `${zoom.k.toFixed(1)}×` : "ZOOM"}
-        </button>
+        </button> */}
 
         <div style={{flex:1,minWidth:200}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
