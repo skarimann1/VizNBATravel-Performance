@@ -49,7 +49,7 @@ function FatigueIndexExplainer() {
   };
 
   return (
-    <div style={{ maxWidth: 820, margin: "0 auto 40px" }}>
+    <div style={{ maxWidth: 1100, margin: "0 auto 40px" }}>
       <h2
         style={{
           margin: "0 0 6px 0",
@@ -65,7 +65,6 @@ function FatigueIndexExplainer() {
         Every game in the dataset is assigned a composite <strong style={{ color: PAGE_THEME.text }}>Fatigue Index (FI)</strong> — a single score from 0 (fully rested, no travel) to 100 (maximum observed fatigue). It combines three physiological stress factors, each normalized to [0, 1] before being weighted and summed.
       </p>
 
-      {/* Equation */}
       <code style={equationStyle}>
         FI = 100 × ( w₁·f(Rest) + w₂·f(Miles) + w₃·f(TZ) )
       </code>
@@ -73,7 +72,6 @@ function FatigueIndexExplainer() {
         where <strong style={{ color: PAGE_THEME.text }}>w₁ + w₂ + w₃ = 1</strong> (Equal weight applied to each, i.e. 1/3 each).
       </p>
 
-      {/* Three components */}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={boxStyle}>
           <span style={labelStyle}>f(Rest) — Rest Fatigue</span>
@@ -112,7 +110,7 @@ function App() {
         background: PAGE_THEME.bgPage,
         fontFamily: PAGE_THEME.fontFamily,
         color: PAGE_THEME.textMuted,
-        padding: "32px 24px 48px",
+        padding: "32px 12px 48px",
       }}
     >
       {/* Title */}
@@ -149,7 +147,7 @@ function App() {
       <p
         style={{
           margin: "0 auto 40px",
-          maxWidth: 820,
+          maxWidth: 1100,
           fontSize: 15,
           lineHeight: 1.65,
           color: PAGE_THEME.textMuted,
@@ -159,14 +157,16 @@ function App() {
         The NBA regular season is among the most physically demanding schedules in professional sports. Teams play 82 games over roughly six months, frequently crossing multiple time zones, logging thousands of air miles, and returning to action with fewer than 24 hours of rest between games. Despite the common understanding of this &quot;grind,&quot; easy-to-understand data-driven analysis of how travel fatigue measurably impacts on-court performance remains sparse in public discourse. This project aims to fill that gap.
         <br />
         <br />
-        The central story we want to tell is one of hidden competitive disadvantages. By combining team travel data with official performance metrics, we will visually show that the impact of fatigue caused by short rest windows, long travel distances, and disruptive time-zone crossings has a meaningful relationship with team efficiency. We will be measuring this through Net Rating (NetRtg), Offensive Rating (ORtg), and Defensive Rating (DRtg). These ratings are basically an advanced statistic measuring a team&apos;s efficiency by calculating the number of points scored (or allowed) per 100 possessions. We will additionally investigate whether elevated fatigue correlates with sudden drops in player availability, acting as a proxy for soft injury risk. 
+        The central story we want to tell is one of hidden competitive disadvantages. By combining team travel data with official performance metrics, we will visually show that the impact of fatigue caused by short rest windows, long travel distances, and disruptive time-zone crossings has a meaningful relationship with team efficiency. We will be measuring this through Net Rating (NetRtg), Offensive Rating (ORtg), and Defensive Rating (DRtg). These ratings are basically an advanced statistic measuring a team&apos;s efficiency by calculating the number of points scored (or allowed) per 100 possessions. We will additionally investigate whether elevated fatigue correlates with sudden drops in player availability, acting as a proxy for soft injury risk.
       </p>
 
       {/* Star player injury table — 2024-25 */}
-      <StarPlayerInjuryTable />
+      <div style={{ maxWidth: 1400, margin: "0 auto 40px" }}>
+        <StarPlayerInjuryTable />
+      </div>
       <div
         style={{
-          maxWidth: 820,
+          maxWidth: 1100,
           margin: "0 auto 40px",
           fontSize: 14,
           lineHeight: 1.6,
@@ -182,11 +182,17 @@ function App() {
       <FatigueIndexExplainer />
 
       {/* Visualizations */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-        <NBATravelMap_v3 />
+      <div style={{ display: "flex", flexDirection: "column", gap: 24, alignItems: "center" }}>
+
+        {/* Travel Map */}
+        <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
+          <NBATravelMap_v3 />
+        </div>
         <div
           style={{
-            maxWidth: 820,
+            maxWidth: 1100,
+            width: "100%",
+            margin: "0 auto",
             fontSize: 14,
             lineHeight: 1.6,
             color: PAGE_THEME.textMuted,
@@ -226,10 +232,15 @@ function App() {
           </ul>
         </div>
 
-        <FatigueIndexInjuryChart />
+        {/* Fatigue Index Injury Chart */}
+        <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
+          <FatigueIndexInjuryChart />
+        </div>
         <div
           style={{
-            maxWidth: 820,
+            maxWidth: 1100,
+            width: "100%",
+            margin: "0 auto",
             fontSize: 14,
             lineHeight: 1.6,
             color: PAGE_THEME.textMuted,
@@ -251,10 +262,15 @@ function App() {
           </p>
         </div>
 
-        <FatigueScatterPlot />
+        {/* Fatigue Scatter Plot */}
+        <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
+          <FatigueScatterPlot />
+        </div>
         <div
           style={{
-            maxWidth: 820,
+            maxWidth: 1100,
+            width: "100%",
+            margin: "0 auto",
             fontSize: 14,
             lineHeight: 1.6,
             color: PAGE_THEME.textMuted,
@@ -271,11 +287,20 @@ function App() {
           >
             Fatigue vs. performance scatter plot — description
           </h3>
-          <p style={{ margin: 0 }}>
-            Each point in this chart represents a single team-game observation. The horizontal axis shows the composite Fatigue Index for that game; the vertical axis shows team performance (Net Rating, Offensive Rating, or Defensive Rating). A LOESS regression curve shows the overall trend across all games, making it easy to see whether higher fatigue consistently predicts worse performance. Use the team and season filters to focus on a specific context, or view the full league to see the aggregate relationship.
+          <p style={{ margin: "0 0 10px" }}>
+            Each point in this chart represents a single team-game observation. The horizontal axis shows the composite Fatigue Index for that game and the vertical axis shows team performance (Net Rating, Offensive Rating, or Defensive Rating). A LOESS regression curve shows the overall trend across all games, making it easy to see whether higher fatigue consistently predicts worse performance. Use the team and season filters to focus on a specific context, or view the full league to see the aggregate relationship.
           </p>
-         
+          <p style={{ margin: "0 0 10px" }}>
+            The <strong style={{ color: PAGE_THEME.text }}>r coefficient</strong> displayed on the chart is the <strong style={{ color: PAGE_THEME.text }}>Pearson correlation coefficient</strong>, which measures the linear relationship between the Fatigue Index and the selected performance metric. It ranges from <strong style={{ color: PAGE_THEME.text }}>-1 to +1</strong>, where values near -1 indicate a strong negative relationship, values near +1 a strong positive one, and values near 0 indicate little to no linear relationship.
+          </p>
+          <p style={{ margin: "0 0 10px" }}>
+            Our results show r values of approximately <strong style={{ color: PAGE_THEME.text }}>-0.059 to -0.063</strong>, which are very small negative correlations. This means that while higher fatigue does trend toward slightly worse performance, the relationship is weak and fatigue alone is not a reliable predictor of any single game's outcome. Honestly, this is not that surprising. NBA performance is driven by so many things at once, including opponent quality, roster depth, home-court advantage, and individual player variance, that a fatigue signal at the game level can be pretty easy to miss.
+          </p>
+          <p style={{ margin: 0 }}>
+            What these small r values really tell us is that fatigue's impact is <strong style={{ color: PAGE_THEME.text }}>cumulative and contextual</strong> rather than something that shows up dramatically in any one game. The effect becomes more visible when you look at stretches of back-to-backs, long road trips, or the grind of late-season play, which is exactly what the travel map and fatigue index chart above are built to highlight.
+          </p>
         </div>
+
       </div>
     </div>
   );
