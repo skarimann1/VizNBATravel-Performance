@@ -33,6 +33,7 @@ interface ArcRow {
   dateObj?: Date;
 }
 interface TooltipData { x: number; y: number; arc: ArcRow; }
+interface CityPanel { x: number; y: number; city: string; arcs: ArcRow[]; }
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const WIDTH = 960;
@@ -63,10 +64,32 @@ const TEAM_NAMES: Record<string, string> = {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// Straight line with perpendicular offset so parallel routes don't overlap.
+// offsetIndex: which lane this line occupies (0 = centre, ±1 = one step out …)
+function straightLine(
+  x1: number, y1: number,
+  x2: number, y2: number,
+  offsetIndex: number
+): string {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 0.001) return `M${x1},${y1} L${x2},${y2}`;
+  const px = -dy / len;
+  const py =  dx / len;
+  const gap = 3.5;
+  const ox = px * offsetIndex * gap;
+  const oy = py * offsetIndex * gap;
+  return `M${x1 + ox},${y1 + oy} L${x2 + ox},${y2 + oy}`;
+}
+
+// Used only for the animated plane (needs a geo path to follow)
 function arcLineString(d: ArcRow, n = 80): GeoJSON.LineString {
   const interp = d3.geoInterpolate([d.from_lon, d.from_lat], [d.to_lon, d.to_lat]);
   return { type:"LineString", coordinates: d3.range(n).map(i => interp(i/(n-1))) };
 }
+
 function strokeWidth(miles?: number) {
   return d3.scaleLinear().domain([0,3000]).range([1,5]).clamp(true)(miles ?? 0);
 }
@@ -86,8 +109,33 @@ export default function NBATravelMap() {
   const [dateIndex, setDateIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipData|null>(null);
+  const [cityPanel, setCityPanel] = useState<CityPanel|null>(null);
   const [showPlayers, setShowPlayers] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
+  const [zoom, setZoom] = useState({ k: 1, x: 0, y: 0 });
+
+  // Zoom via scroll wheel
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom(prev => {
+        const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        const newK = Math.min(8, Math.max(1, prev.k * factor));
+        const rect = el.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const newX = mx - (mx - prev.x) * (newK / prev.k);
+        const newY = my - (my - prev.y) * (newK / prev.k);
+        const maxX = WIDTH  * (newK - 1);
+        const maxY = HEIGHT * (newK - 1);
+        return { k: newK, x: Math.min(0, Math.max(-maxX, newX)), y: Math.min(0, Math.max(-maxY, newY)) };
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   useEffect(() => {
     d3.json("/data/states-10m.json").then(setUsTopo).catch(console.error);
@@ -152,7 +200,7 @@ export default function NBATravelMap() {
         arcs.push({
           season: curr.season,
           date: curr.game_date,
-          game_id: String(curr.game_date),
+          game_id: String(curr.game_date) + curr.team_slug + i,
           team: curr.team_slug,
           team_name: TEAM_NAMES[curr.team_slug] ?? curr.team_slug,
           opponent: curr.opponent_slug,
@@ -227,14 +275,49 @@ export default function NBATravelMap() {
 
   const latestArc = drawableArcs[drawableArcs.length - 1];
 
-  const seasonMean = useMemo(() => {
-    const vals = teamArcs.map(d => d.netrtg).filter(v => v != null) as number[];
-    return vals.length ? d3.mean(vals)! : 0;
-  }, [teamArcs]);
+  // Assign parallel-lane offsets so repeated routes don't overlap.
+  const arcOffsets = useMemo(() => {
+    const routeCount = new Map<string, number>();
+    const offsets = new Map<string, number>();
+    for (const d of drawableArcs) {
+      if (!projection) break;
+      const a = projection([d.from_lon, d.from_lat]);
+      const b = projection([d.to_lon,   d.to_lat]);
+      if (!a || !b) { offsets.set(d.game_id, 0); continue; }
+      // Snap coords to nearest 4px to group near-identical routes
+      const ak = `${Math.round(a[0]/4)*4},${Math.round(a[1]/4)*4}`;
+      const bk = `${Math.round(b[0]/4)*4},${Math.round(b[1]/4)*4}`;
+      // Sort so A→B and B→A share the same corridor key
+      const key = [ak, bk].sort().join('|');
+      const n = routeCount.get(key) ?? 0;
+      const idx = n === 0 ? 0 : Math.ceil(n / 2) * (n % 2 === 1 ? 1 : -1);
+      offsets.set(d.game_id, idx);
+      routeCount.set(key, n + 1);
+    }
+    return offsets;
+  }, [drawableArcs, projection]);
 
-  function circleR(netrtg?: number) {
-    if (netrtg == null) return 4;
-    return Math.max(2.5, Math.min(12, 5 + (netrtg - seasonMean) * 0.5));
+  // Group away-game dots by snapped coordinate so overlapping dots can be fanned
+  const groupedDots = useMemo(() => {
+    if (!projection) return [];
+    const map = new Map<string, { cx: number; cy: number; city: string; arcs: ArcRow[] }>();
+    drawableArcs.filter(d => d.home_away === "A").forEach(d => {
+      const pt = projection([d.to_lon, d.to_lat]);
+      if (!pt) return;
+      const key = `${Math.round(pt[0]/8)*8},${Math.round(pt[1]/8)*8}`;
+      if (!map.has(key)) map.set(key, { cx: pt[0], cy: pt[1], city: d.city ?? d.opponent, arcs: [] });
+      map.get(key)!.arcs.push(d);
+    });
+    return Array.from(map.values());
+  }, [drawableArcs, projection]);
+
+  // Dot border encodes NetRtg vs baseline
+  function baselineStroke(nb?: number): { color: string; width: number } {
+    if (nb == null) return { color: "#374151", width: 1 };
+    const mag = Math.min(Math.abs(nb) / 15, 1);
+    const width = 1 + mag * 4;
+    const color = nb >= 0 ? `rgba(74,222,128,${0.4 + mag * 0.6})` : `rgba(248,113,113,${0.4 + mag * 0.6})`;
+    return { color, width };
   }
 
   useEffect(() => {
@@ -251,12 +334,22 @@ export default function NBATravelMap() {
   useEffect(() => {
     setDateIndex(0);
     setIsPlaying(false);
+    setCityPanel(null);
   }, [selectedTeam, selectedSeason]);
 
   function handleHover(e: React.MouseEvent<SVGElement>, arc: ArcRow) {
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect) return;
     setTooltip({ x: e.clientX - rect.left + 14, y: e.clientY - rect.top - 8, arc });
+  }
+
+  function handleCityClick(e: React.MouseEvent<SVGElement>, group: { cx: number; cy: number; city: string; arcs: ArcRow[] }) {
+    e.stopPropagation();
+    setTooltip(null);
+    if (cityPanel && cityPanel.city === group.city) { setCityPanel(null); return; }
+    const screenX = group.cx * zoom.k + zoom.x;
+    const screenY = group.cy * zoom.k + zoom.y;
+    setCityPanel({ x: screenX, y: screenY, city: group.city, arcs: group.arcs });
   }
 
   const summaryStats = useMemo(() => {
@@ -286,7 +379,7 @@ export default function NBATravelMap() {
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16}}>
         <div>
           <div style={{fontSize:10,letterSpacing:"0.25em",color:teamColor,textTransform:"uppercase",marginBottom:2}}>
-            NBA · 2023–24 SEASON · TRAVEL FATIGUE MAP
+            NBA · {selectedSeason} SEASON · TRAVEL FATIGUE MAP
           </div>
           <h1 style={{margin:0,fontSize:24,fontWeight:700,color:"#f8fafc",letterSpacing:"-0.03em"}}>
             {teamName}
@@ -363,13 +456,21 @@ export default function NBATravelMap() {
           ↩ RESET
         </button>
 
+        <button onClick={()=>setZoom({k:1,x:0,y:0})} style={{
+          background:"transparent",color:"#64748b",border:"1px solid #334155",
+          borderRadius:4,padding:"6px 12px",fontFamily:"inherit",fontSize:11,cursor:"pointer",
+          display:"flex",alignItems:"center",gap:4
+        }}>
+          ⊙ {zoom.k > 1 ? `${zoom.k.toFixed(1)}×` : "ZOOM"}
+        </button>
+
         <div style={{flex:1,minWidth:200}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
             <span style={{fontSize:9,color:"#64748b"}}>GAME DATE</span>
             <span style={{fontSize:11,color:"#94a3b8"}}>{currentDate || "—"}</span>
           </div>
           <input type="range" min={0} max={Math.max(dates.length-1,0)} value={dateIndex}
-            onChange={e=>{setIsPlaying(false);setDateIndex(Number(e.target.value))}}
+            onChange={e=>{setIsPlaying(false);setDateIndex(Number(e.target.value));setCityPanel(null)}}
             style={{width:"100%",accentColor:teamColor}}
           />
         </div>
@@ -392,7 +493,10 @@ export default function NBATravelMap() {
 
         {/* ── Map ── */}
         <div style={{position:"relative",borderRadius:8,overflow:"hidden",border:"1px solid #1e293b",flex:1}}>
-          <svg ref={svgRef} width={WIDTH} height={HEIGHT} style={{background:"#0a1628",display:"block"}}>
+          <svg ref={svgRef} width={WIDTH} height={HEIGHT}
+            style={{background:"#0a1628",display:"block",cursor: zoom.k > 1 ? "grab" : "default"}}
+            onClick={() => setCityPanel(null)}>
+          <g transform={`translate(${zoom.x},${zoom.y}) scale(${zoom.k})`}>
 
             {/* State fills */}
             <g>
@@ -401,18 +505,23 @@ export default function NBATravelMap() {
               ))}
             </g>
 
-            {/* Travel arcs */}
+            {/* Travel arcs — straight lines with parallel offsets when routes repeat */}
             <g>
               {drawableArcs.map(d => {
-                const geo = arcLineString(d, 80);
-                const ap = path(geo);
-                if (!ap) return null;
+                const a = projection([d.from_lon, d.from_lat]);
+                const b = projection([d.to_lon, d.to_lat]);
+                if (!a || !b) return null;
                 const isLatest = d === latestArc;
+                const isHome = d.home_away === "H";
+                const sw = strokeWidth(d.travel_miles);
+                const offset = arcOffsets.get(d.game_id) ?? 0;
+                const ap = straightLine(a[0], a[1], b[0], b[1], offset);
                 return (
                   <path key={`arc-${d.game_id}`} d={ap} fill="none"
                     stroke={fatigueColor(d.fatigue_index)}
-                    strokeWidth={isLatest ? strokeWidth(d.travel_miles)+1.5 : strokeWidth(d.travel_miles)}
-                    opacity={isLatest ? 1 : 0.4}
+                    strokeWidth={isLatest ? sw + 1.5 : isHome ? Math.max(1, sw - 0.5) : sw}
+                    strokeDasharray={isHome ? "5,6" : undefined}
+                    opacity={isLatest ? 1 : isHome ? 0.25 : 0.45}
                     strokeLinecap="round"
                     onMouseMove={e=>handleHover(e,d)}
                     onMouseLeave={()=>setTooltip(null)}
@@ -422,39 +531,82 @@ export default function NBATravelMap() {
               })}
             </g>
 
-            {/* Destination dots */}
+            {/* Away destination dots — grouped by city, fanned when overlapping */}
             <g>
-              {drawableArcs.map(d => {
-                const pt = projection([d.to_lon, d.to_lat]);
-                if (!pt) return null;
-                const isLatest = d === latestArc;
+              {groupedDots.map(group => {
+                const count = group.arcs.length;
+                const isStack = count > 1;
+                const isPanelOpen = cityPanel?.city === group.city;
+                const hasLatest = group.arcs.includes(latestArc);
+                const fanR = isStack ? Math.min(6 + count * 1.5, 18) : 0;
+
                 return (
-                  <circle key={`dot-${d.game_id}`}
-                    cx={pt[0]} cy={pt[1]}
-                    r={isLatest ? circleR(d.netrtg)+2 : circleR(d.netrtg)}
-                    fill={fatigueColor(d.fatigue_index)}
-                    stroke={isLatest ? "#ffffff" : "#080e1a"}
-                    strokeWidth={isLatest ? 1.5 : 0.5}
-                    opacity={isLatest ? 1 : 0.75}
-                    onMouseMove={e=>handleHover(e,d)}
-                    onMouseLeave={()=>setTooltip(null)}
-                    style={{cursor:"pointer"}}
-                  />
+                  <g key={`group-${group.city}-${group.cx.toFixed(0)}`}>
+                    {group.arcs.map((d, i) => {
+                      const isLatest = d === latestArc;
+                      const bs = baselineStroke(d.netrtg_vs_baseline);
+                      const angle = isStack ? (i / count) * 2 * Math.PI - Math.PI / 2 : 0;
+                      const dotX = group.cx + (isStack ? fanR * Math.cos(angle) : 0);
+                      const dotY = group.cy + (isStack ? fanR * Math.sin(angle) : 0);
+                      const r = isLatest ? 7 : 5;
+
+                      return (
+                        <circle key={`dot-${d.game_id}`}
+                          cx={dotX} cy={dotY} r={r}
+                          fill={fatigueColor(d.fatigue_index)}
+                          stroke={isLatest ? "#ffffff" : isPanelOpen ? "#cbd5e1" : bs.color}
+                          strokeWidth={isLatest ? 2 : isPanelOpen ? 1.5 : bs.width}
+                          opacity={isLatest ? 1 : 0.85}
+                          onMouseMove={e => handleHover(e, d)}
+                          onMouseLeave={() => setTooltip(null)}
+                          onClick={e => handleCityClick(e, group)}
+                          style={{cursor:"pointer"}}
+                        />
+                      );
+                    })}
+
+                    {/* Stack badge: count bubble when >1 game at this city */}
+                    {isStack && (
+                      <g onClick={e => handleCityClick(e, group)} style={{cursor:"pointer"}}>
+                        <circle
+                          cx={group.cx} cy={group.cy} r={fanR + 4}
+                          fill="transparent"
+                          stroke={isPanelOpen ? "#f8fafc" : "#475569"}
+                          strokeWidth={1}
+                          strokeDasharray="3,3"
+                          opacity={0.6}
+                        />
+                        <circle cx={group.cx} cy={group.cy - fanR - 14} r={8}
+                          fill={isPanelOpen ? "#f8fafc" : "#1e293b"}
+                          stroke={isPanelOpen ? "#0f172a" : "#64748b"}
+                          strokeWidth={1.5}
+                        />
+                        <text x={group.cx} y={group.cy - fanR - 14}
+                          textAnchor="middle" dominantBaseline="central"
+                          fontSize={8} fontWeight={700}
+                          fill={isPanelOpen ? "#0f172a" : "#e2e8f0"}
+                          style={{pointerEvents:"none", fontFamily:"monospace"}}
+                        >{count}</text>
+                      </g>
+                    )}
+                  </g>
                 );
               })}
             </g>
 
             {/* Animated plane on latest arc */}
             {latestArc && (() => {
-              const geo = arcLineString(latestArc, 80);
-              const ap = path(geo);
-              if (!ap) return null;
+              const a = projection([latestArc.from_lon, latestArc.from_lat]);
+              const b = projection([latestArc.to_lon, latestArc.to_lat]);
+              if (!a || !b) return null;
               const pid = `lp-${latestArc.game_id}`;
+              const offset = arcOffsets.get(latestArc.game_id) ?? 0;
+              const ap = straightLine(a[0], a[1], b[0], b[1], offset);
               return (
                 <g key={`plane-${latestArc.game_id}`}>
                   <path id={pid} d={ap} fill="none" stroke="none" />
                   <g>
-                    <animateMotion dur="0.5s" repeatCount="1" fill="freeze">
+                    <animateMotion dur="0.6s" repeatCount="1" fill="freeze" keyTimes="0;1" keyPoints="0;1">
                       <mpath href={`#${pid}`} />
                     </animateMotion>
                     <circle r={5} fill="white" opacity={0.95} />
@@ -464,6 +616,7 @@ export default function NBATravelMap() {
               );
             })()}
 
+          </g>{/* end zoom group */}
           </svg>
 
           {/* Tooltip */}
@@ -505,19 +658,139 @@ export default function NBATravelMap() {
             </div>
           )}
 
+          {/* City panel — pinned popup for stacked same-city games */}
+          {cityPanel && (() => {
+            const panelW = 260;
+            const rawX = cityPanel.x + 16;
+            const x = rawX + panelW > WIDTH ? cityPanel.x - panelW - 8 : rawX;
+            const y = Math.max(8, cityPanel.y - 20);
+            const wins = cityPanel.arcs.filter(d => d.isWin).length;
+            const avgFI = d3.mean(cityPanel.arcs.map(d => d.fatigue_index).filter(v=>v!=null) as number[]);
+            const avgNR = d3.mean(cityPanel.arcs.map(d => d.netrtg).filter(v=>v!=null) as number[]);
+            const latestArcInPanel = cityPanel.arcs.reduce((latest, d) =>
+              !latest || d.date > latest.date ? d : latest, cityPanel.arcs[0]);
+            return (
+              <div style={{
+                position:"absolute", left:x, top:y, zIndex:20, pointerEvents:"all",
+                background:"#0b1526", border:"1px solid #334155",
+                borderRadius:8, width:panelW, boxShadow:"0 8px 32px rgba(0,0,0,0.8)",
+                fontFamily:"'IBM Plex Mono','Courier New',monospace",
+              }}>
+                {/* Panel header */}
+                <div style={{
+                  display:"flex", alignItems:"center", justifyContent:"space-between",
+                  padding:"10px 12px 8px", borderBottom:"1px solid #1e293b"
+                }}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:700,color:"#f8fafc"}}>{cityPanel.city}</div>
+                    <div style={{fontSize:10,color:"#475569",marginTop:1}}>
+                      {cityPanel.arcs.length} game{cityPanel.arcs.length>1?"s":""} · {wins}W–{cityPanel.arcs.length-wins}L
+                      {avgFI != null && <span style={{marginLeft:8,color:fatigueColor(avgFI)}}>avg fatigue {fmt(avgFI)}</span>}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setCityPanel(null)}
+                    style={{background:"none",border:"none",color:"#475569",fontSize:16,cursor:"pointer",lineHeight:1,padding:"0 2px"}}
+                  >×</button>
+                </div>
+
+                {/* Avg NetRtg bar */}
+                {avgNR != null && (
+                  <div style={{padding:"6px 12px",borderBottom:"1px solid #1e293b",display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:9,color:"#64748b",letterSpacing:"0.08em"}}>AVG NETRTG</span>
+                    <span style={{fontSize:13,fontWeight:700,color:avgNR>=0?"#4ade80":"#f87171"}}>{fmt(avgNR)}</span>
+                    <div style={{flex:1,height:4,background:"#1e293b",borderRadius:2,overflow:"hidden"}}>
+                      <div style={{
+                        height:"100%", borderRadius:2,
+                        background: avgNR >= 0 ? "#4ade80" : "#f87171",
+                        width:`${Math.min(100, Math.abs(avgNR) / 20 * 100)}%`,
+                        marginLeft: avgNR < 0 ? "auto" : undefined,
+                      }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Game rows */}
+                <div style={{maxHeight:260,overflowY:"auto"}}>
+                  {cityPanel.arcs.sort((a,b) => a.date.localeCompare(b.date)).map((d, i) => {
+                    const bs = baselineStroke(d.netrtg_vs_baseline);
+                    return (
+                      <div key={d.game_id} style={{
+                        padding:"8px 12px",
+                        borderBottom: i < cityPanel.arcs.length-1 ? "1px solid #0f172a" : "none",
+                        background: d === latestArcInPanel ? "rgba(255,255,255,0.03)" : "transparent",
+                      }}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                          <span style={{fontSize:11,color:"#94a3b8"}}>{d.date}</span>
+                          <span style={{fontSize:12,fontWeight:700,color: d.isWin ? "#4ade80" : "#f87171"}}>
+                            {d.isWin==null?"—":d.isWin?`W ${d.pts}`:`L ${d.pts}`}
+                          </span>
+                        </div>
+                        <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                          {([
+                            ["FTG", fmt(d.fatigue_index), fatigueColor(d.fatigue_index)],
+                            ["NET", fmt(d.netrtg), d.netrtg!=null&&d.netrtg>=0?"#4ade80":"#f87171"],
+                            ["ORtg", fmt(d.ortg), "#94a3b8"],
+                            ["DRtg", fmt(d.drtg), "#94a3b8"],
+                            ["REST", d.rest_days!=null?`${d.rest_days.toFixed(1)}d`:"—", "#94a3b8"],
+                          ] as [string,string,string][]).map(([lbl,val,col]) => (
+                            <div key={lbl} style={{textAlign:"center"}}>
+                              <div style={{fontSize:12,fontWeight:700,color:col}}>{val}</div>
+                              <div style={{fontSize:8,color:"#374151",letterSpacing:"0.06em"}}>{lbl}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Legend */}
           <div style={{
             position:"absolute",bottom:14,right:14,background:"rgba(8,14,26,0.93)",
             border:"1px solid #1e293b",borderRadius:6,padding:"8px 12px",fontSize:10
           }}>
-            <div style={{color:"#64748b",letterSpacing:"0.1em",marginBottom:6}}>FATIGUE INDEX</div>
-            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-              <span style={{color:"#38bdf8"}}>Low</span>
-              <div style={{width:56,height:5,borderRadius:3,background:"linear-gradient(to right,#38bdf8,#facc15,#ef4444)"}} />
-              <span style={{color:"#ef4444"}}>High</span>
+            <div style={{color:"#64748b",letterSpacing:"0.1em",marginBottom:6}}>ENCODING</div>
+            <div style={{marginBottom:5}}>
+              <div style={{color:"#64748b",fontSize:9,marginBottom:2}}>ARC FILL · Fatigue Index</div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{color:"#38bdf8",fontSize:9}}>Low</span>
+                <div style={{width:52,height:4,borderRadius:2,background:"linear-gradient(to right,#38bdf8,#facc15,#ef4444)"}} />
+                <span style={{color:"#ef4444",fontSize:9}}>High</span>
+              </div>
             </div>
-            <div style={{color:"#475569",fontSize:9}}>Arc width = travel miles</div>
-            <div style={{color:"#475569",fontSize:9}}>Dot size = NetRtg vs baseline</div>
+            <div style={{marginBottom:5}}>
+              <div style={{color:"#64748b",fontSize:9,marginBottom:2}}>ARC WIDTH · Miles traveled</div>
+              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                <div style={{width:20,height:1,background:"#94a3b8"}} />
+                <span style={{color:"#475569",fontSize:9}}>short</span>
+                <div style={{width:20,height:4,borderRadius:1,background:"#94a3b8"}} />
+                <span style={{color:"#475569",fontSize:9}}>long</span>
+              </div>
+            </div>
+            <div style={{marginBottom:5}}>
+              <div style={{color:"#64748b",fontSize:9,marginBottom:2}}>DOT BORDER · NetRtg vs baseline</div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <div style={{width:10,height:10,borderRadius:"50%",background:"#1e293b",border:"2.5px solid #4ade80"}} />
+                <span style={{color:"#475569",fontSize:9}}>above</span>
+                <div style={{width:10,height:10,borderRadius:"50%",background:"#1e293b",border:"2.5px solid #f87171"}} />
+                <span style={{color:"#475569",fontSize:9}}>below</span>
+              </div>
+            </div>
+            <div>
+              <div style={{color:"#64748b",fontSize:9,marginBottom:2}}>ARC STYLE</div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <div style={{width:24,height:2,background:"#94a3b8"}} />
+                <span style={{color:"#475569",fontSize:9}}>away trip</span>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}>
+                <div style={{width:24,borderTop:"2px dashed #94a3b8"}} />
+                <span style={{color:"#475569",fontSize:9}}>return home</span>
+              </div>
+            </div>
           </div>
         </div>
 
