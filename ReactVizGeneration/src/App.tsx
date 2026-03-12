@@ -92,13 +92,13 @@ function FatigueIndexExplainer() {
         <div style={boxStyle}>
           <span style={labelStyle}>f(TZ) — Time-Zone Disruption</span>
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: PAGE_THEME.textMuted }}>
-            A penalty based on the <strong style={{ color: PAGE_THEME.text }}>number of time zones crossed per trip leg</strong>, with an additional directional penalty applied to <strong style={{ color: PAGE_THEME.text }}>west-to-east travel</strong>. Research in chronobiology shows that eastward travel phase-advances the internal clock, which is harder for the body to accommodate than the phase delay caused by traveling west — so a flight from LA to Miami carries a higher TZ cost than the reverse.
+            A penalty based on the <strong style={{ color: PAGE_THEME.text }}>number of time zones crossed per trip leg</strong>, with an additional directional penalty applied to <strong style={{ color: PAGE_THEME.text }}>west-to-east travel</strong>. Research in chronobiology shows that eastward travel phase-advances the internal clock, which is harder for the body to accommodate than the phase delay caused by traveling west, so a flight from LA to Miami carries a higher TZ cost than the reverse.
           </p>
         </div>
       </div>
 
       <p style={{ margin: "16px 0 0", fontSize: 13, color: PAGE_THEME.textDim, lineHeight: 1.6 }}>
-        Two control variables — <strong style={{ color: PAGE_THEME.text }}>rolling opponent Net Rating</strong> (strength of schedule) and <strong style={{ color: PAGE_THEME.text }}>home/away status</strong> — are included in the regression models to ensure that observed fatigue effects are not simply reflecting opponent quality or home-court advantage.
+        Two control variables: <strong style={{ color: PAGE_THEME.text }}>rolling opponent Net Rating</strong> (strength of schedule) and <strong style={{ color: PAGE_THEME.text }}>home/away status</strong>, are included in the regression models to ensure that observed fatigue effects are not simply reflecting opponent quality or home-court advantage.
       </p>
     </div>
   );
