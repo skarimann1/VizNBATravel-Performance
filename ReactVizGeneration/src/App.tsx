@@ -272,25 +272,9 @@ function App() {
             Fatigue vs. performance scatter plot — description
           </h3>
           <p style={{ margin: 0 }}>
-            Each point in this chart represents a single team-game observation. The horizontal axis shows the composite Fatigue Index for that game; the vertical axis shows team performance (Net Rating, Offensive Rating, or Defensive Rating — toggle using the metric selector). A LOESS regression curve with confidence bands shows the overall trend across all games, making it easy to see whether higher fatigue consistently predicts worse performance. Use the team and season filters to focus on a specific context, or view the full league to see the aggregate relationship.
+            Each point in this chart represents a single team-game observation. The horizontal axis shows the composite Fatigue Index for that game; the vertical axis shows team performance (Net Rating, Offensive Rating, or Defensive Rating). A LOESS regression curve shows the overall trend across all games, making it easy to see whether higher fatigue consistently predicts worse performance. Use the team and season filters to focus on a specific context, or view the full league to see the aggregate relationship.
           </p>
-          <h3
-            style={{
-              margin: "16px 0 8px 0",
-              fontSize: 16,
-              fontWeight: 700,
-              color: PAGE_THEME.text,
-              letterSpacing: "-0.01em",
-            }}
-          >
-            How to use
-          </h3>
-          <ul style={{ margin: 0, paddingLeft: 20 }}>
-            <li><strong>Metric toggle</strong> — Switch between NetRtg, ORtg, DRtg, and injury availability proxy to see how fatigue relates to different performance dimensions.</li>
-            <li><strong>Season / Team filters</strong> — Narrow the data to a specific team or year, or leave on &quot;All&quot; to see the league-wide pattern.</li>
-            <li><strong>Fatigue weight sliders</strong> — Adjust w₁ (rest), w₂ (miles), and w₃ (time zones) to explore how different assumptions about fatigue change the relationship with performance.</li>
-            <li><strong>Hover</strong> over individual points to see the game date, opponent, and exact FI / rating values.</li>
-          </ul>
+         
         </div>
       </div>
     </div>
