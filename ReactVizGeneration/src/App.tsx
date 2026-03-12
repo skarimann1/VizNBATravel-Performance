@@ -70,7 +70,7 @@ function FatigueIndexExplainer() {
         FI = 100 × ( w₁·f(Rest) + w₂·f(Miles) + w₃·f(TZ) )
       </code>
       <p style={{ margin: "0 0 20px", fontSize: 13, color: PAGE_THEME.textDim, lineHeight: 1.5 }}>
-        where <strong style={{ color: PAGE_THEME.text }}>w₁ + w₂ + w₃ = 1</strong> (default: equal thirds, i.e. ⅓ each). Weights are user-adjustable in the scatter plot below.
+        where <strong style={{ color: PAGE_THEME.text }}>w₁ + w₂ + w₃ = 1</strong> (Equal weight applied to each, i.e. 1/3 each).
       </p>
 
       {/* Three components */}
